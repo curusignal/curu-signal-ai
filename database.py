@@ -309,6 +309,22 @@ def process_approved_payment(payment: dict, duration_days: int = 30) -> tuple[bo
         user = session.get(User, intent.user_id)
         if user is None:
             raise LookupError("Usuario de pago no encontrado")
+
+        # Una intención de compra concede un solo periodo, aunque el mismo
+        # enlace de Checkout Pro genere más de un pago aprobado con IDs distintos.
+        if intent.status == "approved":
+            session.add(Payment(
+                provider_payment_id=payment_id, user_id=user.id,
+                preference_id=intent.preference_id, amount_cop=int(amount),
+                currency=currency, status="duplicate_approved",
+                raw_reference=external_reference,
+            ))
+            session.add(AuditEvent(
+                user_id=user.id, event_type="payment_duplicate_approved",
+                details=f"payment_id={payment_id}; external_reference={external_reference}",
+            ))
+            return False, None
+
         payment_row = Payment(
             provider_payment_id=payment_id, user_id=user.id, preference_id=intent.preference_id,
             amount_cop=int(amount), currency=currency, status="approved", raw_reference=external_reference,
