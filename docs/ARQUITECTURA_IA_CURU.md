@@ -37,26 +37,23 @@ La IA **no** debe:
 
 La lista local actual contiene 497 símbolos según la revisión técnica disponible. Antes de anunciar cobertura completa del S&P 500 deberá contrastarse y actualizarse contra una fuente vigente y documentada.
 
-### Etapa B — Primera lectura de IA de todo el universo elegible
+### Etapa B — Selección cuantitativa sin IA
 
-La IA hará una lectura preliminar de **todos los símbolos que hayan superado los controles de datos y liquidez**, no solamente del Top 10.
+**No se ejecutarán llamadas a modelos de IA sobre los casi 500 símbolos del S&P 500 ni sobre todo el universo que supere los filtros.** Esta decisión controla costos, latencia y consumo de tokens.
 
-Para controlar consumo, tiempo y límites de proveedores:
+El motor determinista realizará, sin IA:
 
-- enviar los activos en lotes compactos, no una llamada independiente por símbolo;
-- reutilizar resultados mientras no cambien los datos de entrada relevantes;
-- guardar el proveedor, modelo, fecha, versión del prompt y estado de cada evaluación;
-- limitar tamaño de entrada y salida;
-- manejar límites, errores y respuestas inválidas sin detener ni falsear el análisis cuantitativo;
-- marcar explícitamente los activos sin evaluación de IA cuando el proveedor no responda.
+- cálculo de indicadores e históricos para el universo;
+- validación de cobertura y vigencia de los datos;
+- filtros básicos de liquidez y calidad;
+- ordenamiento cuantitativo reproducible;
+- selección del Top 10 con las reglas configuradas por CURU (actualmente, volatilidad realizada a 20 sesiones y ATR, después del filtro de liquidez).
 
-Esta primera lectura debe identificar, cuando los datos disponibles lo permitan, alineación o divergencia entre tendencia, impulso, momentum, volatilidad y liquidez. No debe inferir fundamentales o noticias que no se hayan suministrado.
+Estas operaciones usan código y métricas locales; no generan prompts ni consumen tokens de modelos.
 
-### Etapa C — Selección cuantitativa y análisis profundo
+### Etapa C — Análisis profundo de IA exclusivo del Top 10
 
-La selección del informe seguirá siendo reproducible y separada de la opinión del modelo. El Top 10 se determinará mediante las reglas cuantitativas configuradas por CURU (actualmente, volatilidad realizada a 20 sesiones y ATR, después del filtro de liquidez).
-
-Sobre esos activos seleccionados se realizará una segunda lectura más profunda de IA, incorporando:
+Solo después de cerrar la selección cuantitativa se enviarán los diez activos seleccionados a la IA. Cada evaluación profunda podrá incorporar:
 
 - métricas técnicas calculadas por CURU;
 - noticias corporativas recientes con fuente, fecha y enlace cuando estén disponibles;
@@ -117,9 +114,9 @@ Antes de considerar terminada esta capa se deberán probar, al menos, estos caso
 - activo sin noticias recientes;
 - lote con uno o varios símbolos fallidos.
 
-La prueba debe confirmar que ningún fallo de IA genera datos ficticios, bloquea indebidamente el motor cuantitativo o etiqueta un resultado no evaluado como análisis completado.
+La prueba debe confirmar que ningún fallo de IA genera datos ficticios, bloquea indebidamente el motor cuantitativo o etiqueta un resultado no evaluado como análisis completado. También verificará que la selección cuantitativa del Top 10 ocurre antes de invocar la IA y que el máximo por informe es de diez activos.
 
-También se deberán medir consumo, latencia y tasa de fallos con un universo de prueba representativo antes de habilitar el análisis completo de todos los símbolos.
+También se deberán medir consumo, latencia y tasa de fallos con un lote de hasta diez activos. Las pruebas deberán confirmar que ningún símbolo descartado antes del Top 10 genera llamadas a proveedores de IA. No se habilitará análisis de IA masivo sobre el universo completo.
 
 ## 8. Orden de trabajo acordado
 
