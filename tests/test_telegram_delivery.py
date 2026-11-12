@@ -1,4 +1,5 @@
 """Pruebas de la ruta de entrega PDF a Telegram con el cliente HTTP simulado."""
+import os
 import sys
 import tempfile
 import unittest
