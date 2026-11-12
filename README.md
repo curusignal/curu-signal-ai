@@ -15,7 +15,7 @@ Esta es una base de lanzamiento consolidada, todavía pendiente de configurar co
 - Historial persistente de usuarios, cortesías, pagos, suscripciones, informes, entregas, webhooks y auditoría.
 - Restricciones de base de datos que impiden borrar o truncar registros históricos.
 - Cortesía única por `telegram_id`, reservada atómicamente y con reintento de entrega sin crear un segundo beneficio.
-- Checkout Pro clásico mediante Preferences API, validación HMAC de webhook, consulta del pago a Mercado Pago, comprobación de importe/moneda y activación idempotente.
+- Checkout Pro mediante Preferences API, validación HMAC de webhook, consulta del pago a Mercado Pago, comprobación estricta del importe y moneda definidos en cada orden, y activación idempotente. El catálogo de precios puede ofrecer varios mercados/monedas desde Telegram.
 - Reconciliación de pagos reembolsados/contracargos: el acceso asociado se revoca sin borrar los registros.
 - Generación y envío diario programado en la zona `America/Bogota`.
 - Docker, health check y carpeta de informes configurable para volumen persistente.
@@ -33,6 +33,14 @@ Si falla la generación o el envío, el beneficio queda reservado como `failed`;
 3. Para desarrollo se permite SQLite. En producción `APP_ENV=production` exige `DATABASE_URL` PostgreSQL.
 4. Ejecutar `python bot.py`.
 5. Verificar `GET /health`.
+
+## Pagos multi-moneda e internacionalización
+
+- El modelo de órdenes ya no asume que todo pago es COP: cada intención conserva su importe esperado y código ISO 4217 de moneda; cada pago guarda importe y moneda recibidos.
+- Telegram muestra los mercados configurados en `CURU_PRICE_CATALOG`. Ejemplo de variable de entorno: `CURU_PRICE_CATALOG={"CO":{"label":"Colombia","currency":"COP","amount":"30000"},"MX":{"label":"México","currency":"MXN","amount":"199"}}`. Los importes son ejemplos de configuración, no precios comerciales recomendados.
+- Si la variable no existe, se conserva el catálogo colombiano heredado (`PRECIO_SUSCRIPCION_COP`). No se debe habilitar un mercado hasta confirmar que la cuenta y el producto de pago del proveedor aceptan esa moneda y pueden liquidar los fondos al vendedor. Cambiar el código de moneda no crea por sí solo capacidad internacional.
+- Para actualizar una base PostgreSQL existente, ejecutar una sola vez `migrations/002_payment_multi_currency.sql` antes de desplegar este código. La migración conserva las órdenes y pagos COP anteriores. En bases nuevas, `init_db()` crea directamente el esquema actualizado.
+- El diseño deja el importe/moneda desacoplados de la membresía, pero la integración de cobro activa sigue siendo Mercado Pago. Para cobertura global real habrá que habilitar el producto Cross Border aplicable a la cuenta o añadir otro proveedor (por ejemplo, uno con cobertura internacional adecuada); no se debe anunciar aceptación mundial hasta probar cobros y liquidación por país.
 
 ## Nota de integración Mercado Pago
 
