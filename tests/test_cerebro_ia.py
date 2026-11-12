@@ -34,7 +34,7 @@ class TestCerebroIA(unittest.TestCase):
         r = cerebro_ia.analizar_activo_con_ia_detallado(DATOS, [], [])
         self.assertEqual(r["estado_ia"], "no_disponible")
         self.assertIn("IA NO DISPONIBLE", r["texto"])
-        self.assertIn("no es una probabilidad", r["texto"])
+        self.assertIn("no es probabilidad", r["texto"])
 
     def test_respaldo_declara_datos_fundamentales_ausentes(self):
         texto = cerebro_ia.analizar_activo_con_ia(DATOS, [], [])
