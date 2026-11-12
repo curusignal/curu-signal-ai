@@ -1,5 +1,4 @@
 """Pruebas de la ruta de entrega PDF a Telegram con el cliente HTTP simulado."""
-import os
 import sys
 import tempfile
 import unittest
@@ -11,7 +10,6 @@ class TestTelegramDelivery(unittest.TestCase):
     def setUp(self):
         self.env = patch.dict(os.environ, {
             "TELEGRAM_BOT_TOKEN": "123456:token-falso-de-prueba",
-            "DATABASE_URL": "sqlite:///./telegram_delivery_test.db",
         })
         self.env.start()
         sys.modules.pop("bot", None)
@@ -19,11 +17,8 @@ class TestTelegramDelivery(unittest.TestCase):
         self.bot_module = bot
 
     def tearDown(self):
-        self.bot_module.db.engine.dispose()
         sys.modules.pop("bot", None)
         self.env.stop()
-        if os.path.exists("telegram_delivery_test.db"):
-            os.remove("telegram_delivery_test.db")
 
     def test_entrega_pdf_registra_pendiente_y_enviado(self):
         with tempfile.NamedTemporaryFile(suffix=".pdf") as pdf:
