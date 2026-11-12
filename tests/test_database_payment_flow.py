@@ -79,6 +79,45 @@ class TestDatabasePaymentFlow(unittest.TestCase):
             self.db.process_approved_payment(self._pago(currency_id="USD"), 30)
         self.assertFalse(self.db.is_subscription_active("998877"))
 
+    def test_orden_usd_valida_importe_y_moneda_de_forma_independiente(self):
+        self.db.create_payment_intent(
+            "998877", "orden-usd-001", amount="9.99", currency="USD"
+        )
+        payment = {
+            "id": "usd-payment-001",
+            "external_reference": "orden-usd-001",
+            "status": "approved",
+            "transaction_amount": "9.99",
+            "currency_id": "USD",
+        }
+        applied, telegram_id = self.db.process_approved_payment(payment, 30)
+        self.assertTrue(applied)
+        self.assertEqual(telegram_id, "998877")
+        with self.db.engine.connect() as conn:
+            row = conn.exec_driver_sql(
+                "SELECT amount, amount_cop, currency FROM payments WHERE provider_payment_id = 'usd-payment-001'"
+            ).one()
+        self.assertEqual(str(row[0]), "9.990000")
+        self.assertEqual(row[1], 0)
+        self.assertEqual(row[2], "USD")
+
+    def test_orden_usd_rechaza_pago_en_cop_o_importe_diferente(self):
+        self.db.create_payment_intent(
+            "998877", "orden-usd-002", amount="9.99", currency="USD"
+        )
+        base = {
+            "id": "usd-payment-002",
+            "external_reference": "orden-usd-002",
+            "status": "approved",
+            "transaction_amount": "9.99",
+            "currency_id": "USD",
+        }
+        with self.assertRaisesRegex(ValueError, "Monto o moneda"):
+            self.db.process_approved_payment({**base, "currency_id": "COP"}, 30)
+        with self.assertRaisesRegex(ValueError, "Monto o moneda"):
+            self.db.process_approved_payment({**base, "transaction_amount": "10.00"}, 30)
+        self.assertFalse(self.db.is_subscription_active("998877"))
+
     def test_pago_reembolsado_revoca_su_periodo_y_conserva_historial(self):
         self._crear_orden()
         self.db.process_approved_payment(self._pago(), 30)
