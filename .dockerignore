@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+.git
+__pycache__
+*.py[cod]
+.venv
+venv
+curu_dev.db
+datos_bot
+reportes_generados
+temp_graficos
+*.log
