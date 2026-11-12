@@ -1,12 +1,14 @@
 """Aplicación Telegram + webhooks + entrega programada de CURU SIGNAL AI."""
 from __future__ import annotations
 
+import json
 import logging
 import os
 import threading
 import time
 import uuid
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -29,7 +31,6 @@ from pagos import crear_preferencia, obtener_pago, verificar_firma_webhook
 LOG = logging.getLogger("curu.bot")
 TZ_NAME = os.getenv("TIMEZONE", "America/Bogota")
 TZ = ZoneInfo(TZ_NAME)
-PRICE = int(os.getenv("PRECIO_SUSCRIPCION_COP", "30000"))
 DURATION_DAYS = int(os.getenv("DURACION_SUSCRIPCION_DIAS", "30"))
 REPORT_HOUR = int(os.getenv("REPORT_HOUR", "4"))
 REPORT_MINUTE = int(os.getenv("REPORT_MINUTE", "0"))
@@ -38,8 +39,49 @@ ADMIN_IDS = {x.strip() for x in os.getenv("ADMIN_TELEGRAM_IDS", "").split(",") i
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 if not TELEGRAM_TOKEN:
     raise RuntimeError("Falta TELEGRAM_BOT_TOKEN")
-if PRICE <= 0 or DURATION_DAYS <= 0:
-    raise RuntimeError("Precio y duración de suscripción deben ser positivos")
+def _load_price_catalog() -> dict:
+    raw = os.getenv("CURU_PRICE_CATALOG", "").strip()
+    if raw:
+        try:
+            catalog = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("CURU_PRICE_CATALOG debe ser JSON válido") from exc
+    else:
+        catalog = {"CO": {"label": "Colombia", "currency": "COP", "amount": os.getenv("PRECIO_SUSCRIPCION_COP", "30000")}}
+    if not isinstance(catalog, dict) or not catalog:
+        raise RuntimeError("CURU_PRICE_CATALOG debe contener al menos un mercado")
+    validated = {}
+    for country, item in catalog.items():
+        code = str(country).upper().strip()
+        if len(code) != 2 or not code.isalpha() or not isinstance(item, dict):
+            raise RuntimeError("Mercado inválido en CURU_PRICE_CATALOG")
+        currency = str(item.get("currency", "")).upper().strip()
+        label = str(item.get("label", code)).strip()
+        try:
+            amount = Decimal(str(item.get("amount", "")))
+        except InvalidOperation as exc:
+            raise RuntimeError(f"Importe inválido para mercado {code}") from exc
+        if len(currency) != 3 or not currency.isalpha() or not label or not amount.is_finite() or amount <= 0:
+            raise RuntimeError(f"Configuración inválida para mercado {code}")
+        validated[code] = {"label": label, "currency": currency, "amount": amount}
+    return validated
+
+PRICE_CATALOG = _load_price_catalog()
+if DURATION_DAYS <= 0:
+    raise RuntimeError("La duración de suscripción debe ser positiva")
+
+def _format_amount(amount: Decimal) -> str:
+    if amount == amount.to_integral_value():
+        return f"{int(amount):,}".replace(",", ".")
+    return format(amount.normalize(), "f")
+
+def _membership_markup():
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for country, item in PRICE_CATALOG.items():
+        label = f"{item['label']} · {item['currency']} {_format_amount(item['amount'])} / {DURATION_DAYS} días"
+        markup.add(types.InlineKeyboardButton(label, callback_data=f"comprar_{country}"))
+    return markup
+
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN, parse_mode="HTML", threaded=True)
 app = Flask(__name__)
@@ -103,11 +145,7 @@ def _deliver_trial(telegram_id: str, user_db_id: int):
             )
         db.record_delivery(report.id, user_db_id, "trial", "sent")
         db.mark_trial(user_db_id, "sent", report_id=report.id)
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton(
-            f"💎 Activar membresía · ${PRICE:,} COP / {DURATION_DAYS} días".replace(",", "."),
-            callback_data="comprar_acceso",
-        ))
+        markup = _membership_markup()
         bot.send_message(
             telegram_id,
             "¿Te gustaría recibir los próximos informes y mantener tu acceso? Puedes activar tu membresía cuando quieras.",
@@ -237,10 +275,9 @@ def start(message):
             threading.Thread(target=_deliver_trial, args=(str(message.chat.id), user_db.id), daemon=True).start()
         else:
             text += "Actualmente no tienes una membresía activa."
-        markup.add(types.InlineKeyboardButton(
-            f"💳 Suscribirme · ${PRICE:,} COP / {DURATION_DAYS} días".replace(",", "."),
-            callback_data="comprar_acceso",
-        ))
+        membership_markup = _membership_markup()
+        for button_row in membership_markup.keyboard:
+            markup.row(*button_row)
     bot.send_message(message.chat.id, text, reply_markup=markup)
 
 
@@ -266,7 +303,7 @@ def retry_trial(message):
     bot.reply_to(message, "Reintento de la misma cortesía iniciado.")
 
 
-@bot.callback_query_handler(func=lambda call: call.data in {"comprar_acceso", "pedir_pdf"})
+@bot.callback_query_handler(func=lambda call: call.data == "pedir_pdf" or call.data == "comprar_acceso" or call.data.startswith("comprar_"))
 def callbacks(call):
     telegram_id = str(call.message.chat.id)
     user_db_id = db.get_user_id(telegram_id)
@@ -288,10 +325,16 @@ def callbacks(call):
 
     bot.answer_callback_query(call.id)
     try:
+        country = call.data.removeprefix("comprar_") if call.data != "comprar_acceso" else "CO"
+        item = PRICE_CATALOG.get(country)
+        if item is None:
+            bot.send_message(telegram_id, "Ese mercado no está habilitado todavía. Elige una de las monedas disponibles.")
+            return
         external_reference = str(uuid.uuid4())
-        db.create_payment_intent(telegram_id, external_reference, PRICE)
+        db.create_payment_intent(telegram_id, external_reference, amount=item["amount"], currency=item["currency"])
         url, preference_id = crear_preferencia(
-            external_reference=external_reference, amount_cop=PRICE, duration_days=DURATION_DAYS,
+            external_reference=external_reference, amount=item["amount"], currency=item["currency"],
+            duration_days=DURATION_DAYS,
         )
         db.attach_preference(external_reference, preference_id)
         markup = types.InlineKeyboardMarkup()
