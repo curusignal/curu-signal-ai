@@ -292,7 +292,7 @@ def create_payment_intent(
             raise LookupError("Usuario no registrado")
         intent = PaymentIntent(
             external_reference=external_reference, user_id=user.id,
-            expected_amount=expected, expected_currency=code, expected_amount_cop=legacy_cop,
+            expected_amount=expected, expected_currency=code, expected_amount_cop=legacy_cop if legacy_cop is not None else 0,
         )
         session.add(intent)
         session.flush()
@@ -346,7 +346,7 @@ def process_approved_payment(payment: dict, duration_days: int = 30) -> tuple[bo
             session.add(Payment(
                 provider_payment_id=payment_id, user_id=user.id,
                 preference_id=intent.preference_id, amount=amount,
-                amount_cop=int(amount) if currency == "COP" and amount == amount.to_integral_value() else None,
+                amount_cop=int(amount) if currency == "COP" and amount == amount.to_integral_value() else 0,
                 currency=currency, status="duplicate_approved",
                 raw_reference=external_reference,
             ))
