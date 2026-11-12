@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import (
-    Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint,
+    Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint,
     create_engine, event, select,
 )
 from sqlalchemy.exc import IntegrityError
@@ -103,7 +103,9 @@ class PaymentIntent(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     external_reference: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
-    expected_amount_cop: Mapped[int] = mapped_column(Integer, nullable=False)
+    expected_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6), nullable=True)
+    expected_currency: Mapped[Optional[str]] = mapped_column(String(3), nullable=True)
+    expected_amount_cop: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     preference_id: Mapped[Optional[str]] = mapped_column(String(80))
     status: Mapped[str] = mapped_column(String(20), default="created", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
@@ -115,7 +117,8 @@ class Payment(Base):
     provider_payment_id: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
     preference_id: Mapped[Optional[str]] = mapped_column(String(80))
-    amount_cop: Mapped[int] = mapped_column(Integer, nullable=False)
+    amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6), nullable=True)
+    amount_cop: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     currency: Mapped[str] = mapped_column(String(3), default="COP", nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False)
     raw_reference: Mapped[Optional[str]] = mapped_column(Text)
@@ -263,12 +266,34 @@ def is_subscription_active(telegram_id: int | str) -> bool:
         return end is not None
 
 
-def create_payment_intent(telegram_id: int | str, external_reference: str, amount_cop: int) -> int:
+def create_payment_intent(
+    telegram_id: int | str,
+    external_reference: str,
+    amount_cop: int | Decimal | None = None,
+    *,
+    amount: int | Decimal | str | None = None,
+    currency: str = "COP",
+) -> int:
+    """Crea una orden con importe y moneda propios; conserva compatibilidad COP."""
+    raw_amount = amount if amount is not None else amount_cop
+    if raw_amount is None:
+        raise ValueError("El importe de la orden es obligatorio")
+    try:
+        expected = Decimal(str(raw_amount))
+    except InvalidOperation as exc:
+        raise ValueError("Importe de orden inválido") from exc
+    code = str(currency).upper().strip()
+    if not expected.is_finite() or expected <= 0 or len(code) != 3 or not code.isalpha():
+        raise ValueError("Importe o moneda de orden inválidos")
+    legacy_cop = int(expected) if code == "COP" and expected == expected.to_integral_value() else None
     with SessionLocal.begin() as session:
         user = session.scalar(select(User).where(User.telegram_id == str(telegram_id)))
         if user is None:
             raise LookupError("Usuario no registrado")
-        intent = PaymentIntent(external_reference=external_reference, user_id=user.id, expected_amount_cop=amount_cop)
+        intent = PaymentIntent(
+            external_reference=external_reference, user_id=user.id,
+            expected_amount=expected, expected_currency=code, expected_amount_cop=legacy_cop,
+        )
         session.add(intent)
         session.flush()
         return intent.id
@@ -302,7 +327,12 @@ def process_approved_payment(payment: dict, duration_days: int = 30) -> tuple[bo
         intent = session.scalar(select(PaymentIntent).where(PaymentIntent.external_reference == external_reference).with_for_update())
         if intent is None:
             raise ValueError("Referencia de pago desconocida")
-        if amount != Decimal(intent.expected_amount_cop) or currency != "COP":
+        expected_amount = (
+            Decimal(intent.expected_amount) if intent.expected_amount is not None
+            else Decimal(intent.expected_amount_cop)
+        )
+        expected_currency = (intent.expected_currency or "COP").upper()
+        if amount != expected_amount or currency != expected_currency:
             raise ValueError("Monto o moneda del pago no coinciden con la orden")
         if str(payment.get("external_reference")) != external_reference:
             raise ValueError("Referencia externa inválida")
@@ -315,7 +345,8 @@ def process_approved_payment(payment: dict, duration_days: int = 30) -> tuple[bo
         if intent.status == "approved":
             session.add(Payment(
                 provider_payment_id=payment_id, user_id=user.id,
-                preference_id=intent.preference_id, amount_cop=int(amount),
+                preference_id=intent.preference_id, amount=amount,
+                amount_cop=int(amount) if currency == "COP" and amount == amount.to_integral_value() else None,
                 currency=currency, status="duplicate_approved",
                 raw_reference=external_reference,
             ))
@@ -327,7 +358,8 @@ def process_approved_payment(payment: dict, duration_days: int = 30) -> tuple[bo
 
         payment_row = Payment(
             provider_payment_id=payment_id, user_id=user.id, preference_id=intent.preference_id,
-            amount_cop=int(amount), currency=currency, status="approved", raw_reference=external_reference,
+            amount=amount, amount_cop=int(amount) if currency == "COP" and amount == amount.to_integral_value() else None,
+            currency=currency, status="approved", raw_reference=external_reference,
         )
         session.add(payment_row)
         now = utcnow()
@@ -342,7 +374,7 @@ def process_approved_payment(payment: dict, duration_days: int = 30) -> tuple[bo
         session.add(Subscription(user_id=user.id, starts_at=start, ends_at=start + timedelta(days=duration_days),
                                  status="active", source_payment_id=payment_id))
         intent.status = "approved"
-        session.add(AuditEvent(user_id=user.id, event_type="payment_approved", details=f"payment_id={payment_id}; amount={int(amount)} COP"))
+        session.add(AuditEvent(user_id=user.id, event_type="payment_approved", details=f"payment_id={payment_id}; amount={amount} {currency}"))
         return True, user.telegram_id
 
 
