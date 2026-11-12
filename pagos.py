@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import hashlib
+import re
+from decimal import Decimal, InvalidOperation
 import hmac
 import os
 import time
@@ -24,16 +26,34 @@ def _config():
     return token, base_url
 
 
-def crear_preferencia(*, external_reference: str, amount_cop: int, duration_days: int = 30) -> tuple[str, str]:
+def crear_preferencia(
+    *,
+    external_reference: str,
+    amount_cop: int | Decimal | str | None = None,
+    amount: int | Decimal | str | None = None,
+    currency: str = "COP",
+    duration_days: int = 30,
+) -> tuple[str, str]:
+    """Crea Checkout Pro usando la moneda exacta de la orden, no una moneda global."""
     token, base_url = _config()
+    raw_amount = amount if amount is not None else amount_cop
+    if raw_amount is None:
+        raise ValueError("El importe de la preferencia es obligatorio")
+    try:
+        value = Decimal(str(raw_amount))
+    except InvalidOperation as exc:
+        raise ValueError("Importe de preferencia inválido") from exc
+    code = str(currency).upper().strip()
+    if not value.is_finite() or value <= 0 or not re.fullmatch(r"[A-Z]{3}", code):
+        raise ValueError("Importe o moneda de preferencia inválidos")
     idem = str(uuid.uuid4())
     payload = {
         "items": [{
             "id": "curu-membership",
             "title": f"Membresía CURU SIGNAL AI - {duration_days} días",
             "quantity": 1,
-            "currency_id": "COP",
-            "unit_price": float(amount_cop),
+            "currency_id": code,
+            "unit_price": float(value),
         }],
         "external_reference": external_reference,
         "notification_url": f"{base_url}/webhook-pago",
@@ -44,7 +64,10 @@ def crear_preferencia(*, external_reference: str, amount_cop: int, duration_days
         },
         "auto_return": "approved",
         "statement_descriptor": "CURU SIGNAL AI",
-        "metadata": {"product": "membership", "duration_days": duration_days},
+        "metadata": {
+            "product": "membership", "duration_days": duration_days,
+            "expected_currency": code, "expected_amount": str(value),
+        },
     }
     response = requests.post(
         f"{API_BASE}/checkout/preferences", json=payload,
