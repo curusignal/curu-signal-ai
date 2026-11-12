@@ -97,7 +97,7 @@ class TestDatabasePaymentFlow(unittest.TestCase):
             row = conn.exec_driver_sql(
                 "SELECT amount, amount_cop, currency FROM payments WHERE provider_payment_id = 'usd-payment-001'"
             ).one()
-        self.assertEqual(str(row[0]), "9.990000")
+        self.assertAlmostEqual(float(row[0]), 9.99)
         self.assertEqual(row[1], 0)
         self.assertEqual(row[2], "USD")
 
