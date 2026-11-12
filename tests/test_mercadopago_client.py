@@ -43,6 +43,41 @@ class TestMercadoPagoClient(unittest.TestCase):
         self.assertEqual(kwargs["json"]["back_urls"]["success"], "https://curu.example.com/pago/resultado?estado=exitoso")
         self.assertTrue(kwargs["headers"]["X-Idempotency-Key"])
 
+    def test_crea_preferencia_con_moneda_usd_y_monto_decimal(self):
+        response = FakeResponse({
+            "id": "pref-usd-456",
+            "init_point": "https://www.mercadopago.com/checkout/v1/redirect?pref_id=456",
+        })
+        with patch.dict(os.environ, {
+            "MERCADOPAGO_ACCESS_TOKEN": "TEST-ACCESS-TOKEN",
+            "PUBLIC_BASE_URL": "https://curu.example.com",
+        }):
+            with patch.object(pagos.requests, "post", return_value=response) as post:
+                pagos.crear_preferencia(
+                    external_reference="orden-usd-001",
+                    amount="9.99",
+                    currency="USD",
+                    duration_days=30,
+                )
+        item = post.call_args.kwargs["json"]["items"][0]
+        self.assertEqual(item["currency_id"], "USD")
+        self.assertEqual(item["unit_price"], 9.99)
+        self.assertEqual(post.call_args.kwargs["json"]["metadata"]["expected_currency"], "USD")
+
+    def test_rechaza_importe_no_positivo_o_moneda_mal_formada(self):
+        with patch.dict(os.environ, {
+            "MERCADOPAGO_ACCESS_TOKEN": "TEST-ACCESS-TOKEN",
+            "PUBLIC_BASE_URL": "https://curu.example.com",
+        }):
+            with self.assertRaisesRegex(ValueError, "Importe o moneda"):
+                pagos.crear_preferencia(
+                    external_reference="orden-001", amount="0", currency="COP"
+                )
+            with self.assertRaisesRegex(ValueError, "Importe o moneda"):
+                pagos.crear_preferencia(
+                    external_reference="orden-001", amount="10", currency="US"
+                )
+
     def test_no_crea_preferencia_sin_token_o_url_https(self):
         with patch.dict(os.environ, {
             "MERCADOPAGO_ACCESS_TOKEN": "",
