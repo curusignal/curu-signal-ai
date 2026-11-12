@@ -56,9 +56,20 @@ class TestDatabasePaymentFlow(unittest.TestCase):
         self.assertEqual(telegram_id, "998877")
         self.assertTrue(self.db.is_subscription_active("998877"))
 
-        applied_again, telegram_again = self.db.process_approved_payment(self._pago(), 30)
+        applied_again, telegram_again = self.db.process_approved_payment(
+            self._pago(id=7654322), 30
+        )
         self.assertFalse(applied_again)
         self.assertIsNone(telegram_again)
+        with self.db.engine.connect() as conn:
+            subscriptions = conn.exec_driver_sql(
+                "SELECT COUNT(*) FROM subscriptions"
+            ).scalar_one()
+            duplicate_status = conn.exec_driver_sql(
+                "SELECT status FROM payments WHERE provider_payment_id = '7654322'"
+            ).scalar_one()
+        self.assertEqual(subscriptions, 1)
+        self.assertEqual(duplicate_status, "duplicate_approved")
 
     def test_rechaza_monto_o_moneda_distintos_de_la_orden(self):
         self._crear_orden()
