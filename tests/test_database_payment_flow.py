@@ -110,7 +110,7 @@ class TestDatabasePaymentFlow(unittest.TestCase):
         signature = f"ts={timestamp},v1={digest}"
 
         with patch.dict(os.environ, {
-            "TELEGRAM_BOT_TOKEN": "token-falso-de-prueba",
+            "TELEGRAM_BOT_TOKEN": "123456:token-falso-de-prueba",
             "MERCADOPAGO_WEBHOOK_SECRET": secret,
         }):
             import bot
