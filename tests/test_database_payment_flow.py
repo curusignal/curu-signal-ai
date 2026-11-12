@@ -80,6 +80,7 @@ class TestDatabasePaymentFlow(unittest.TestCase):
         self.assertFalse(self.db.is_subscription_active("998877"))
 
     def test_orden_usd_valida_importe_y_moneda_de_forma_independiente(self):
+        self.db.register_user("998877", username="prueba", first_name="Usuario")
         self.db.create_payment_intent(
             "998877", "orden-usd-001", amount="9.99", currency="USD"
         )
@@ -102,6 +103,7 @@ class TestDatabasePaymentFlow(unittest.TestCase):
         self.assertEqual(row[2], "USD")
 
     def test_orden_usd_rechaza_pago_en_cop_o_importe_diferente(self):
+        self.db.register_user("998877", username="prueba", first_name="Usuario")
         self.db.create_payment_intent(
             "998877", "orden-usd-002", amount="9.99", currency="USD"
         )
