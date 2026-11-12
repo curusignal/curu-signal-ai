@@ -54,7 +54,7 @@ Variables opcionales:
 - `DURACION_SUSCRIPCION_DIAS` (por defecto 30)
 - `ADMIN_TELEGRAM_IDS` (IDs separados por coma; no hay VIP codificados en el repositorio)
 - `CRON_SECRET` (solo si se desea habilitar `/webhook-cron`)
-- `GROQ_API_KEY`, `OPENROUTER_API_KEY` (solo resumen contextual opcional)
+- `GROQ_API_KEY`, `OPENROUTER_API_KEY` (análisis contextual de métricas técnicas y noticias para los diez activos seleccionados; no calcula las métricas ni probabilidades)
 
 ## Despliegue Docker
 
@@ -83,7 +83,7 @@ python -m unittest -v test_motor.py
 python -m unittest discover -s tests -v
 ```
 
-Las pruebas cubren cálculo sintético, unicidad de cortesía, bloqueo de borrado, idempotencia de pago y firma de webhook. No prueban la conexión real a Telegram, Mercado Pago, Yahoo Finance ni la infraestructura del proveedor.
+Las pruebas automatizadas cubren cálculo sintético, análisis IA simulado, selección Top 10, generación PDF, persistencia SQLite, idempotencia de pagos, reembolsos, firma de webhook y cliente Checkout Pro con HTTP simulado. No prueban credenciales reales, entrega real de Telegram, cotizaciones reales de Yahoo Finance ni despliegue en infraestructura.
 
 ## Límites de análisis y publicación
 
@@ -92,7 +92,7 @@ Las pruebas cubren cálculo sintético, unicidad de cortesía, bloqueo de borrad
 - La selección actual prioriza volatilidad realizada y liquidez; identifica activos volátiles para análisis, no “ganadores” ni señales garantizadas.
 - Yahoo Finance/yfinance es una fuente de conveniencia sin SLA; el proceso aborta si la cobertura mínima no se cumple.
 - `sp500.txt` recibido contiene 497 símbolos; debe actualizarse y validarse contra una fuente vigente antes de publicitar cobertura total del S&P 500.
-- La capa de IA solo resume titulares. Si falla, el informe conserva explicación determinista.
+- La IA contextualiza las métricas técnicas ya calculadas por CURU junto con los titulares recientes de cada activo y del S&P 500. No se han integrado estados financieros estructurados ni series macroeconómicas; si la IA falla, el informe conserva una explicación cuantitativa determinista.
 
 ## Seguridad
 
