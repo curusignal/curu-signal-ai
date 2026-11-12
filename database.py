@@ -358,7 +358,7 @@ def process_approved_payment(payment: dict, duration_days: int = 30) -> tuple[bo
 
         payment_row = Payment(
             provider_payment_id=payment_id, user_id=user.id, preference_id=intent.preference_id,
-            amount=amount, amount_cop=int(amount) if currency == "COP" and amount == amount.to_integral_value() else None,
+            amount=amount, amount_cop=int(amount) if currency == "COP" and amount == amount.to_integral_value() else 0,
             currency=currency, status="approved", raw_reference=external_reference,
         )
         session.add(payment_row)
